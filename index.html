@@ -2493,6 +2493,74 @@ function updateMatchTimer() {
     // スコア表示も描画フレームごとに更新
     updateScoreUI();
 }
+
+function finishMatch() {
+    if (isMatchFinished) return;
+    isMatchFinished = true;
+
+    // タイマー停止
+    if (matchTimerInterval) {
+        clearInterval(matchTimerInterval);
+    }
+
+    // ポインターロックの解除
+    if (document.exitPointerLock) {
+        document.exitPointerLock();
+    }
+
+    // 勝利判定メッセージの作成
+    let resultText = "";
+    const myId = peer ? peer.id : null;
+    const myKills = (myId && kills[myId]) ? kills[myId] : 0;
+
+    if (selectedGameMode === '2V2_5M') {
+        let redKills = 0;
+        let blueKills = 0;
+        Object.keys(teams).forEach(pId => {
+            const k = kills[pId] || 0;
+            if (teams[pId] === 'RED') redKills += k;
+            if (teams[pId] === 'BLUE') blueKills += k;
+        });
+
+        const myTeamKills = (myTeam === 'RED') ? redKills : blueKills;
+        const enemyTeamKills = (myTeam === 'RED') ? blueKills : redKills;
+
+        if (myTeamKills > enemyTeamKills) {
+            resultText = `VICTORY! (${myTeamKills} vs ${enemyTeamKills})`;
+        } else if (myTeamKills < enemyTeamKills) {
+            resultText = `DEFEAT... (${myTeamKills} vs ${enemyTeamKills})`;
+        } else {
+            resultText = `DRAW (${myTeamKills} vs ${enemyTeamKills})`;
+        }
+    } else {
+        let maxEnemyKills = 0;
+        Object.keys(kills).forEach(pId => {
+            if (pId !== myId) {
+                maxEnemyKills = Math.max(maxEnemyKills, kills[pId] || 0);
+            }
+        });
+
+        if (myKills > maxEnemyKills) {
+            resultText = `1ST PLACE! (${myKills} KILLS)`;
+        } else if (myKills < maxEnemyKills) {
+            resultText = `YOU LOSE (${myKills} KILLS)`;
+        } else {
+            resultText = `DRAW (${myKills} KILLS)`;
+        }
+    }
+
+    // ホストの場合は全プレイヤーに終了通知を送信
+    if (isHost) {
+        sendData({ type: 'match_finish', kills: kills });
+    }
+
+    // HUDを非表示にし、リザルト画面を表示
+    document.getElementById('hud').style.display = 'none';
+    const overlay = document.getElementById('gameover-overlay');
+    const resultElem = document.getElementById('gameover-result');
+    if (resultElem) resultElem.innerText = resultText;
+    if (overlay) overlay.style.display = 'flex';
+}
     </script>
 </body>
 </html>
