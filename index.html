@@ -2280,16 +2280,43 @@ if (playerObj.position.y <= groundY) {
             });
             myTeam = teams[peer.id] || 'RED';
         }
-       function setupSingleConnection(connection) {
+function setupSingleConnection(connection) {
     connection.on('open', () => {
         connections[connection.peer] = connection;
+        
+        // ホストの場合：接続完了時に初期データを送信
+        if (isHost) {
+            assignTeams();
+            const peerList = Object.keys(connections).concat(peer.id);
+            if (selectedGameMode !== 'NONE' && matchEndTime === 0) {
+                matchEndTime = Date.now() + 5 * 60 * 1000;
+            }
+
+            connection.send({ 
+                type: 'game_init', 
+                peers: peerList,
+                mode: selectedGameMode,
+                endTime: matchEndTime,
+                teams: teams,
+                kills: kills
+            });
+        }
+
         if (!isGameStarted) {
             startGame();
         }
     });
 
     connection.on('data', (data) => {
-        // 受信したデータを処理関数に渡す
+        // ホストの場合：受け取ったデータを他の参加者へ転送（中継）する
+        if (isHost) {
+            Object.keys(connections).forEach(id => {
+                if (id !== connection.peer && connections[id] && connections[id].open) {
+                    connections[id].send(data);
+                }
+            });
+        }
+
         handleIncomingData(connection.peer, data);
     });
 
