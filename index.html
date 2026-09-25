@@ -618,7 +618,8 @@
         const SWORD_ATTACK_DURATION = 200;
 
         let minimapCanvas, minimapCtx;
-        let minimapCacheCanvas = null; 
+        let minimapCacheCanvas = null;
+        let matchTimerInterval = null;
         const MAP_SIZE = 250;
 
         function init() {
@@ -2025,22 +2026,22 @@ if (playerObj.position.y <= groundY) {
             document.getElementById('player-hp-bar-fill').style.width = fillPct + '%';
         }
 
-        function updateScoreUI() {
+       function updateScoreUI() {
     const myScoreElem = document.getElementById('score-my-team');
     const enemyScoreElem = document.getElementById('score-enemy-team');
 
     if (!myScoreElem || !enemyScoreElem) return;
 
-    if (selectedGameMode === 'TDM') {
-        // チームデスマッチの場合（味方チーム vs 敵チーム）
+    const myId = peer ? peer.id : null;
+    const myKills = (myId && kills[myId]) ? kills[myId] : 0;
+
+    if (selectedGameMode === '2V2_5M') {
         let redKills = 0;
         let blueKills = 0;
 
-        // チームごとの合計キル数を計算
-        // (※ご自身のコードで管理しているスコア変数に合わせて調整してください)
         Object.keys(teams).forEach(peerId => {
             const team = teams[peerId];
-            const pKills = playerKills[peerId] || 0;
+            const pKills = kills[peerId] || 0;
             if (team === 'RED') redKills += pKills;
             if (team === 'BLUE') blueKills += pKills;
         });
@@ -2053,16 +2054,15 @@ if (playerObj.position.y <= groundY) {
             enemyScoreElem.innerText = redKills;
         }
     } else {
-        // 個人戦（1vs1 など）の場合：自分のキル数 - 相手のキル数（または最多キル数）
         let maxEnemyKills = 0;
-        Object.keys(playerKills || {}).forEach(peerId => {
-            if (peerId !== peer.id) {
-                maxEnemyKills = Math.max(maxEnemyKills, playerKills[peerId]);
+        Object.keys(kills).forEach(peerId => {
+            if (peerId !== myId) {
+                maxEnemyKills = Math.max(maxEnemyKills, kills[peerId] || 0);
             }
         });
 
-        myScoreElem.innerText = kills; // 自分のキル数
-        enemyScoreElem.innerText = maxEnemyKills; // 相手のキル数
+        myScoreElem.innerText = myKills;
+        enemyScoreElem.innerText = maxEnemyKills;
     }
 }
         function takeDamage(damage, attackerId) {
@@ -2438,14 +2438,12 @@ if (playerObj.position.y <= groundY) {
         };
 
 function updateMatchTimer() {
-    // モードがNONE、または終了時間が設定されていない場合は処理を行わない
+    // 時間制限なし、または終了時間が未設定の場合はスキップ
     if (!selectedGameMode || selectedGameMode === 'NONE' || !matchEndTime || isMatchFinished) return;
 
     const timerContainer = document.getElementById('game-timer-display');
     const timerEl = document.getElementById('timer-text');
-    const scoreEl = document.getElementById('score-board-display');
     
-    // 非ホストプレイヤーでもHUDタイマー枠を表示する
     if (timerContainer && timerContainer.style.display !== 'block') {
         timerContainer.style.display = 'block';
     }
@@ -2465,89 +2463,8 @@ function updateMatchTimer() {
     const s = String(totalSec % 60).padStart(2, '0');
     if (timerEl) timerEl.innerText = `${m}:${s}`;
 
-    // --- スコア表示更新（各モード別） ---
-    if (scoreEl) {
-        const myId = peer ? peer.id : null;
-        const myKills = (myId && kills[myId]) ? kills[myId] : 0;
-
-        if (selectedGameMode === '1V1_5M' || selectedGameMode === 'FFA_5M') {
-            let enemyKills = 0;
-            Object.keys(kills).forEach(id => {
-                if (id !== myId) {
-                    enemyKills += kills[id] || 0;
-                }
-            });
-            scoreEl.innerHTML = `<span style="color:#00f3ff;">${myKills}</span> - <span style="color:#ff0055;">${enemyKills}</span>`;
-        } 
-        else if (selectedGameMode === '2V2_5M') {
-            let redKills = 0;
-            let blueKills = 0;
-            Object.keys(teams).forEach(pId => {
-                const k = kills[pId] || 0;
-                if (teams[pId] === 'RED') redKills += k;
-                if (teams[pId] === 'BLUE') blueKills += k;
-            });
-            scoreEl.innerHTML = `<span style="color:#00f3ff;">${blueKills}</span> - <span style="color:#ff0055;">${redKills}</span>`;
-        }
-        else {
-            scoreEl.innerHTML = `<span style="color:#00f3ff;">${myKills}</span> - <span style="color:#ff0055;">0</span>`;
-        }
-    }
-}
-
-        function finishMatch() {
-    // すでに終了している場合は二重実行を防ぐ
-    if (isMatchFinished) return;
-    
-    isMatchFinished = true;
-    if (document.pointerLockElement) {
-        document.exitPointerLock();
-    }
-
-    // ★追加: 全接続プレイヤーへ試合終了と最終キル数を同期送信
-    sendData({
-        type: 'match_finish',
-        kills: kills
-    });
-
-    const overlay = document.getElementById('gameover-overlay');
-    const resultText = document.getElementById('gameover-result');
-    overlay.style.display = 'flex';
-
-    if (selectedGameMode === '2V2_5M') {
-        let redKills = 0;
-        let blueKills = 0;
-
-        Object.keys(teams).forEach(pId => {
-            const k = kills[pId] || 0;
-            if (teams[pId] === 'RED') redKills += k;
-            if (teams[pId] === 'BLUE') blueKills += k;
-        });
-
-        let msg = `REDチーム: ${redKills} キル VS BLUEチーム: ${blueKills} キル<br><br>`;
-        if (redKills === blueKills) msg += "引き分け！";
-        else if ((myTeam === 'RED' && redKills > blueKills) || (myTeam === 'BLUE' && blueKills > redKills)) {
-            msg += "<span style='color:#00f3ff;'>勝利！</span>";
-        } else {
-            msg += "<span style='color:#ff0055;'>敗北...</span>";
-        }
-        resultText.innerHTML = msg;
-    } else {
-        // FFA または 1v1
-        let maxKills = -1;
-        let winner = "なし";
-
-        const allPeers = [peer.id, ...Object.keys(connections)];
-        allPeers.forEach(pId => {
-            const k = kills[pId] || 0;
-            if (k > maxKills) {
-                maxKills = k;
-                winner = enemyNames[pId] || (pId === peer.id ? myUsername : "Player");
-            }
-        });
-
-        resultText.innerHTML = `勝者: ${winner} (${maxKills} キル)<br>あなたのキル数: ${kills[peer.id] || 0}`;
-    }
+    // スコア表示も描画フレームごとに更新
+    updateScoreUI();
 }
     </script>
 </body>
